@@ -18,6 +18,7 @@ using OpenTelemetry.Trace;
 using Polly;
 using Polly.Contrib.WaitAndRetry;
 using Polly.Extensions.Http;
+using Prometheus;
 using Refit;
 using Serilog;
 using Serilog.Enrichers.Span;
@@ -93,8 +94,6 @@ builder.Services.AddOpenTelemetryTracing(options =>
             builder.Configuration["OpenTelemetry:ApplicationVersion"],
             false,
             Environment.MachineName);
-        resourceBuilder.AddTelemetrySdk();
-        resourceBuilder.AddEnvironmentVariableDetector();
     })
     .AddHttpClientInstrumentation(instrumentationOptions =>
     {
@@ -132,21 +131,11 @@ builder.Services.AddOpenTelemetryMetrics(options =>
             false,
             Environment.MachineName);
         resourceBuilder.AddTelemetrySdk();
-        resourceBuilder.AddEnvironmentVariableDetector();
     })
     .AddHttpClientInstrumentation()
     .AddAspNetCoreInstrumentation()
-    .AddRuntimeInstrumentation()
+    .AddEventCounterMetrics()
     .AddPrometheusExporter();
-});
-
-
-// API Error Handler
-builder.Services.AddProblemDetails(options =>
-{
-    options.IncludeExceptionDetails = (_, _) => builder.Environment.IsDevelopment();
-    options.MapToStatusCode<NotImplementedException>(StatusCodes.Status501NotImplemented);
-    options.MapToStatusCode<AuthenticationException>(StatusCodes.Status401Unauthorized);
 });
 
 // Health Checks
@@ -157,7 +146,13 @@ builder.Services.AddHealthChecks()
     .AddDnsResolveHealthCheck(_ => { }, tags: new[] { "live", "ready" })
     .AddDbContextCheck<DogsDbContext>(tags: new[] { "ready" });
 
-
+// API Error Handler
+builder.Services.AddProblemDetails(options =>
+{
+    options.IncludeExceptionDetails = (_, _) => builder.Environment.IsDevelopment();
+    options.MapToStatusCode<NotImplementedException>(StatusCodes.Status501NotImplemented);
+    options.MapToStatusCode<AuthenticationException>(StatusCodes.Status401Unauthorized);
+});
 
 
 var app = builder.Build();
@@ -247,7 +242,7 @@ static async Task<IResult> FailHttp500Async(
     IDogsClient dogsClient,
     CancellationToken cancellationToken)
 {
-    var response = await dogsClient.FailHttp500Async(cancellationToken);
+    var response = await dogsClient.FailHttp404Async(cancellationToken);
     await response.EnsureSuccessStatusCodeAsync();
     return Results.Ok();
 }
